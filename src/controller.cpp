@@ -69,7 +69,6 @@ void Robot_Pose_Callback(const geometry_msgs::Twist::ConstPtr& msg){
     rho = sqrt(pow(delta_x,2)+pow(delta_y,2));
 
     alpha = atan2(delta_y, delta_x) - (robot_theta);
-    beta = delta_theta - alpha;
 
     /* ------ TODO: 4 Quadrant ------ */
 
@@ -83,7 +82,9 @@ void Robot_Pose_Callback(const geometry_msgs::Twist::ConstPtr& msg){
         while(alpha > pi)
             alpha -= 2*pi;
     }
-    
+
+    beta = delta_theta - alpha;
+
 }
 
 
@@ -101,6 +102,15 @@ void Goal_Pose_Callback(const geometry_msgs::PoseStamped::ConstPtr& msg){
     qw = msg->pose.orientation.w;
 
     goal_theta = atan2(2*(qw*qz+qx*qy), 1-2*(qz*qz+qy*qy));
+    
+    if(goal_theta <0){
+        while(goal_theta <0)
+            goal_theta += 2*pi;
+    }
+    if(goal_theta > 2*pi){
+        while(goal_theta>2*pi)
+            goal_theta -= 2*pi;
+    }
 
 }
 
@@ -118,7 +128,7 @@ const float max_w = 2*max_v/wheel_separaton;
 /* -------- Gain ---------- */
 const float Krho = 0.5;
 const float Ka = 2.2; 
-const float Kb = -1.2;
+const float Kb = -0.3;
 
 
 
@@ -151,9 +161,10 @@ int main(int argc, char **argv)
                 ////////// Main Control Loop! /////////////
                 error_x = goal_x - robot_x;
                 error_y = goal_y - robot_y;
-                error_theta = goal_theta - error_theta;
-                ROS_INFO("Error: %f %f %f", error_x, error_y, error_theta);
-                if (abs(error_x) < 0.01 && abs(error_y) < 0.01 && abs(error_theta) < 0.01){
+                error_theta = goal_theta - robot_theta;
+                ROS_INFO("Goal theta: %.2f, Robot Theta: %.2f", goal_theta, robot_theta);
+                // ROS_INFO("Error: %.3f %.3f %.3f", error_x, error_y, error_theta);
+                if (abs(error_x) < 0.01 && abs(error_y) < 0.01 && abs(error_theta) < 0.2){
                     state = IDLE;
                 }
                 else{
@@ -165,6 +176,10 @@ int main(int argc, char **argv)
             break;
             case IDLE:
                 // Stop and listen to new goal.
+                // reset error signals.
+                error_x = 0;
+                error_y = 0;
+                error_theta = 0;
                 v = 0;
                 w = 0;
                 ROS_INFO("Robot reached the goal and is now IDLE.");
