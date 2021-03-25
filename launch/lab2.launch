@@ -1,0 +1,10 @@
+<launch>
+
+  <!-- <node name="turtlesim_node" pkg="turtlesim" type="turtlesim_node" /> -->
+  
+  <node name="controller" pkg="lab2_localization_controller" type="controller_node" output="screen"/>
+ 
+  <include file="$(find simulation_env)/launch/free_space.launch" />
+  <include file="$(find turtlebot_teleop)/launch/keyboard_teleop.launch" />
+
+</launch>
