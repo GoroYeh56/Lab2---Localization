@@ -37,8 +37,8 @@ ros::Subscriber goal_pose_sub;
 
 
 const float pi = 3.14159265358979323846;
-
-enum State{MOVING, IDLE};
+//            0       1       2
+enum State{MOVING, TURNING, IDLE};
 State state = IDLE; //Initial turtle state/pose.
 
 float rho, alpha, beta;
@@ -61,6 +61,16 @@ void Robot_Pose_Callback(const geometry_msgs::Twist::ConstPtr& msg){
     robot_y = msg->linear.y;
     robot_theta = msg->angular.z;
 
+
+    if(robot_theta > pi){
+        while(robot_theta > pi)
+            robot_theta -= 2*pi;
+    }
+    if(robot_theta <= -pi){
+        while(robot_theta <= 2*pi)
+            robot_theta += 2*pi;
+    }
+
     float delta_x = goal_x - robot_x;
     float delta_y = goal_y - robot_y;
     float delta_theta = goal_theta - robot_theta;
@@ -68,7 +78,47 @@ void Robot_Pose_Callback(const geometry_msgs::Twist::ConstPtr& msg){
     // Convert to polar coordinate.
     rho = sqrt(pow(delta_x,2)+pow(delta_y,2));
 
-    alpha = atan2(delta_y, delta_x) - (robot_theta);
+
+        // % xc : robot_x.
+        // % xi : initial_x.
+
+
+        // % 1st - quardrum
+        float x_c = goal_x;
+        float y_c = goal_y;
+        float angle_c = goal_theta;
+
+        float x_i = robot_x;
+        float y_i = robot_y;
+        float angle = robot_theta;
+
+        
+        float x_err = error_x;
+        float y_err = error_y;
+
+
+        if (x_c - x_i >= 0 && y_c - y_i >= 0){
+            alpha = (atan2(y_err,x_err) - angle);
+            beta = angle_c - atan2(y_err,x_err);
+        }
+        // % 2nd - quardrum
+        if (x_c - x_i <= 0 && y_c - y_i >= 0){
+            alpha = (atan2(y_err,x_err) - angle);
+            beta = angle_c + (2*pi - atan2(y_err,x_err));
+        }
+        // % 3rd quardrum
+        if (x_c - x_i <=0 && y_c - y_i <=0){
+            alpha = pi + atan2(y_err,x_err) - angle + pi;
+            beta = -(pi + atan2(y_err,x_err) - angle_c) + pi;
+        }
+
+        // % 4th quardrum
+        if (x_c - x_i >=0 && y_c - y_i <=0){
+            alpha = pi + atan2(y_err,x_err) - angle + pi;
+            beta = -(pi + atan2(y_err,x_err) - angle_c) + pi;
+        }
+
+    // alpha = atan2(delta_y, delta_x) - (robot_theta);
 
     /* ------ TODO: 4 Quadrant ------ */
 
@@ -83,7 +133,18 @@ void Robot_Pose_Callback(const geometry_msgs::Twist::ConstPtr& msg){
             alpha -= 2*pi;
     }
 
-    beta = delta_theta - alpha;
+
+    if (beta <= -pi){
+        while(beta <= -pi){
+            beta += 2*pi;
+        }
+    }
+    if (beta > pi){
+        while(beta > pi)
+            beta -= 2*pi;
+    }
+
+    // beta = delta_theta - alpha;
 
 }
 
@@ -103,14 +164,14 @@ void Goal_Pose_Callback(const geometry_msgs::PoseStamped::ConstPtr& msg){
 
     goal_theta = atan2(2*(qw*qz+qx*qy), 1-2*(qz*qz+qy*qy));
     
-    if(goal_theta <0){
-        while(goal_theta <0)
-            goal_theta += 2*pi;
-    }
-    if(goal_theta > 2*pi){
-        while(goal_theta>2*pi)
-            goal_theta -= 2*pi;
-    }
+    // if(goal_theta <0){
+    //     while(goal_theta <0)
+    //         goal_theta += 2*pi;
+    // }
+    // if(goal_theta > 2*pi){
+    //     while(goal_theta>2*pi)
+    //         goal_theta -= 2*pi;
+    // }
 
 }
 
@@ -126,12 +187,15 @@ const float max_v = 2*wheel_r*Max_Wheel_Speed;
 const float max_w = 2*max_v/wheel_separaton; 
 
 /* -------- Gain ---------- */
-const float Krho = 0.5;
-const float Ka = 2.2; 
-const float Kb = -0.3;
+// const float Krho = 0.5;
+// const float Ka = 2.2; 
+// const float Kb = -0.6;
 
-
-
+// Claude
+const float Krho = 2;
+const float Ka = 8;
+const float Kb = -1.5;
+const float Kp = 0.5;
 
 int main(int argc, char **argv)
 {
@@ -156,16 +220,21 @@ int main(int argc, char **argv)
 	while (ros::ok()) 
 	{
 
+        error_x = goal_x - robot_x;
+        error_y = goal_y - robot_y;
+        error_theta = goal_theta - robot_theta;
+
+        ROS_INFO("State: %d, Goal theta: %.2f, Robot Theta: %.2f", state, goal_theta, robot_theta);
+        ROS_INFO("Error: %.3f %.3f %.3f", error_x, error_y, error_theta);
+
         switch(state){
             case MOVING:
                 ////////// Main Control Loop! /////////////
-                error_x = goal_x - robot_x;
-                error_y = goal_y - robot_y;
-                error_theta = goal_theta - robot_theta;
-                ROS_INFO("Goal theta: %.2f, Robot Theta: %.2f", goal_theta, robot_theta);
-                // ROS_INFO("Error: %.3f %.3f %.3f", error_x, error_y, error_theta);
-                if (abs(error_x) < 0.01 && abs(error_y) < 0.01 && abs(error_theta) < 0.2){
+                if (abs(error_x) < 0.01 && abs(error_y) < 0.01 && abs(error_theta) < 0.1){
                     state = IDLE;
+                }
+                else if(abs(error_x) < 0.01 && abs(error_y) < 0.01){
+                    state = TURNING;
                 }
                 else{
                     /* --- Control Law --- */
@@ -174,18 +243,30 @@ int main(int argc, char **argv)
                     // ROS_INFO("Robot is MOVING !!!");
                 }
             break;
+            case TURNING:
+ 
+                if ( abs(error_theta) < 0.1 || abs(robot_theta + 2*pi)<0.1 || abs(error_theta - 2*pi) < 0.1){
+                    state = IDLE;
+                }
+                else{
+                    /* --- Control Law --- */
+                    v = 0;
+                    w = Kp * error_theta;
+                }
+
+            break;
             case IDLE:
                 // Stop and listen to new goal.
                 // reset error signals.
-                error_x = 0;
-                error_y = 0;
-                error_theta = 0;
                 v = 0;
                 w = 0;
                 ROS_INFO("Robot reached the goal and is now IDLE.");
             break;
         }
 			
+
+
+            
         /* Command Inputs Constraints */
         if ( v > max_v ){
             v = max_v;
